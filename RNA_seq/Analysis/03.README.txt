@@ -1,0 +1,356 @@
+# RNA-seq Differential Expression Analysis Pipeline
+## DESeq2 Grid Search Analysis
+
+---
+
+## Overview
+
+이 파이프라인은 RNA-seq 데이터의 차등 발현 유전자(DEG) 분석을 수행합니다. 
+여러 파라미터 조합(padj cutoff × Fold Change cutoff)에 대한 그리드 서치를 통해 
+최적의 DEG 검출 조건을 탐색합니다.
+
+---
+
+## Input Requirements
+
+### 1. Count Matrix
+- **파일명**: `merged_counts.txt`
+- **형식**: Tab-separated text file
+- **구조**:
+  ```
+  Geneid  Chr  Start  End  Strand  Length  Sample1  Sample2  Sample3  ...
+  GENE001 chr1 1000   2000 +       1000    150      200      180
+  GENE002 chr1 3000   4500 -       1500    80       95       70
+  ```
+
+### 2. Sample Naming Convention
+샘플명에서 자동으로 조건을 추출합니다:
+- **패턴**: `[Condition]_[Replicate_Number]`
+- **예시**:
+  - `Control_1`, `Control_2`, `Control_3`
+  - `Condition1_1`, `Condition1_2`, `Condition1_3`
+  - `Condition2_1`, `Condition2_2`, `Condition2_3`
+
+---
+
+## Analysis Parameters
+
+### Grid Search Parameters
+
+| Parameter | Values | Description |
+|-----------|--------|-------------|
+| **padj cutoff** | 0.01, 0.05, 0.1 | Adjusted p-value threshold |
+| **FC cutoff** | 1.5, 2.0, 3.0, 4.0 | Fold Change threshold |
+| **log2FC cutoff** | 0.585, 1.0, 1.585, 2.0 | Automatically calculated |
+
+**Total Combinations**: 3 × 4 = **12 parameter sets**
+
+### Gene Filtering Criteria
+- Count > 10 in at least 10% of samples
+- 낮은 발현 유전자 제거로 통계적 검정력 향상
+
+---
+
+## Analysis Workflow
+
+### 1. DESeq2 Setting
+- Count matrix 로딩 및 필터링
+- 메타데이터 자동 추출
+- DESeq2 객체 생성 및 모델 적합
+
+### 2. Differential Expression Analysis
+
+#### 2.1 Grid Search
+- 12개 파라미터 조합 × N개 비교 수행
+- 각 조합별 DEG 테이블 생성
+- 전체 결과 요약
+
+#### 2.2 Volcano Plot
+- 각 파라미터 조합 및 비교별 Volcano plot
+- DEG 시각화 (Up/Down/Not significant)
+
+#### 2.3 MA Plot
+- 평균 발현량 대비 fold change 시각화
+- 발현량에 따른 DEG 분포 확인
+
+#### 2.4 Summary Visualization
+- 파라미터별 DEG 개수 비교
+- Heatmap으로 전체 결과 요약
+
+### 3. Top DEGs Analysis
+
+#### 3.1 Top 50 DEGs Extraction
+- Strict criteria: padj < 0.01, FC > 2
+- 가장 유의미한 DEG 추출
+
+#### 3.2 Heatmap
+- Top 50 DEG의 발현 패턴 시각화
+- Z-score normalized, hierarchical clustering
+
+### 4. PCA on DEGs
+- DEG만을 이용한 PCA 분석
+- 샘플 간 유사성 및 그룹 분리도 평가
+
+---
+
+## Output Files
+
+### 디렉토리 구조
+```
+DEG_results/
+├── metadata.txt
+├── 2.1_* (Grid search results)
+├── 2.2_* (Volcano plots)
+├── 2.3_* (MA plots)
+├── 2.4_* (Summary visualizations)
+├── 3.1_* (Top DEG lists)
+├── 3.2_* (Heatmaps)
+└── 4_* (PCA plots)
+```
+
+### 파일 목록 (N = 비교 수)
+
+#### 0. Metadata
+- `metadata.txt`: 샘플별 조건 정보
+
+#### 2.1 Grid Search Results
+**각 파라미터 조합 × 비교 조합마다 3개 파일:**
+- `2.1_padj[X]_fc[Y]_[Condition]_vs_Control_unfiltered.txt`
+  - NA 포함 전체 유전자 결과
+- `2.1_padj[X]_fc[Y]_[Condition]_vs_Control_all.txt`
+  - NA 제거 후 전체 결과 (Regulation 정보 포함)
+- `2.1_padj[X]_fc[Y]_[Condition]_vs_Control_DEG_only.txt`
+  - DEG만 추출한 결과
+
+**Summary:**
+- `2.1_grid_search_summary.txt`: 전체 그리드 서치 결과 요약
+
+**파일 예시:**
+```
+2.1_padjp01_fcp5_Condition1_vs_Control_unfiltered.txt
+2.1_padjp01_fc2p0_Condition1_vs_Control_all.txt
+2.1_padjp05_fc3p0_Condition1_vs_Control_DEG_only.txt
+```
+
+#### 2.2 Volcano Plots
+- `2.2_padj[X]_fc[Y]_[Condition]_vs_Control_volcano.pdf` (12 × N개)
+
+#### 2.3 MA Plots
+- `2.3_padj[X]_fc[Y]_[Condition]_vs_Control_MA.pdf` (12 × N개)
+
+#### 2.4 Summary Visualizations
+- `2.4_DEG_count_comparison_[Condition].pdf` (N개)
+- `2.4_DEG_count_heatmap.pdf` (1개)
+
+#### 3.1 Top DEG Lists
+- `3.1_top50_DEGs_Control_vs_[Condition].txt` (N개)
+
+#### 3.2 Heatmaps
+- `3.2_heatmap_top50_Control_vs_[Condition].pdf` (N개)
+
+#### 4. PCA
+- `4_PCA_DEGs_Control_vs_[Condition].pdf` (N개)
+
+---
+
+## Output File Formats
+
+### DEG Table Columns
+
+| Column | Description |
+|--------|-------------|
+| Gene | Gene identifier |
+| baseMean | Mean normalized count across all samples |
+| log2FoldChange | Log2 fold change |
+| lfcSE | Standard error of log2FC |
+| stat | Wald statistic |
+| pvalue | Nominal p-value |
+| padj | Adjusted p-value (Benjamini-Hochberg) |
+| Regulation | Up / Down / Not significant |
+
+### Grid Search Summary Columns
+
+| Column | Description |
+|--------|-------------|
+| Comparison | Comparison name (e.g., Control_vs_Condition1) |
+| padj_cutoff | Adjusted p-value threshold used |
+| FC_cutoff | Fold Change threshold used |
+| log2FC_cutoff | Log2 Fold Change threshold used |
+| Total_DEGs | Total number of DEGs |
+| Upregulated | Number of upregulated genes |
+| Downregulated | Number of downregulated genes |
+| Total_Tested | Total number of genes tested |
+
+---
+
+## Total File Count
+
+비교 조합이 **N개**인 경우:
+
+- **텍스트 파일**: 1 + 36N + 1 + N = **37N + 2개**
+  - Metadata: 1
+  - Unfiltered: 12N
+  - All: 12N
+  - DEG_only: 12N
+  - Grid summary: 1
+  - Top DEG lists: N
+
+- **PDF 파일**: 24N + 24N + N + 1 + N + N = **51N + 1개**
+  - Volcano: 24N
+  - MA: 24N
+  - Count comparison: N
+  - Count heatmap: 1
+  - Top DEG heatmaps: N
+  - PCA: N
+
+**예시 (N=2인 경우):**
+- 텍스트: 76개
+- PDF: 103개
+- **총 179개 파일**
+
+---
+
+## Usage
+
+### 1. 데이터 준비
+```bash
+# Count matrix 확인
+head merged_counts.txt
+
+# 샘플명 확인
+head -1 merged_counts.txt | cut -f7-
+```
+
+### 2. 스크립트 실행
+```r
+# R 실행
+source("DESeq2_grid_search.R")
+```
+
+### 3. 결과 확인
+```bash
+# 결과 디렉토리 확인
+ls -lh DEG_results/
+
+# Grid search summary 확인
+cat DEG_results/2.1_grid_search_summary.txt
+
+# 특정 조건의 DEG 개수 확인
+wc -l DEG_results/2.1_padjp05_fc2p0_*_DEG_only.txt
+```
+
+---
+
+## Key Features
+
+### 1. 자동 메타데이터 추출
+- 샘플명 규칙 기반 조건 자동 인식
+- Control을 reference level로 자동 설정
+
+### 2. 포괄적 그리드 서치
+- 12개 파라미터 조합 자동 테스트
+- 최적 조건 선택을 위한 데이터 제공
+
+### 3. 다층 필터링 결과
+- Unfiltered: 모든 유전자 (NA 포함)
+- All: 통계 검정 완료된 모든 유전자
+- DEG_only: 유의미한 DEG만
+
+### 4. 통합 시각화
+- Volcano plot: 개별 유전자 수준
+- MA plot: 발현량 의존성
+- Heatmap: 전체 파라미터 비교
+- PCA: 샘플 그룹화 품질
+
+---
+
+## Quality Control Recommendations
+
+### 1. Grid Search Summary 확인
+```r
+summary <- read.delim("DEG_results/2.1_grid_search_summary.txt")
+
+# 파라미터별 DEG 개수 분포
+library(ggplot2)
+ggplot(summary, aes(x=FC_cutoff, y=Total_DEGs, fill=factor(padj_cutoff))) +
+  geom_bar(stat="identity", position="dodge") +
+  facet_wrap(~Comparison)
+```
+
+### 2. 적절한 파라미터 선택 기준
+- **너무 많은 DEG** (>5000): 기준이 너무 loose
+- **너무 적은 DEG** (<100): 기준이 너무 strict
+- **권장**: 500-2000 DEGs for typical experiments
+
+### 3. PCA 확인
+- PC1/PC2가 조건별로 명확히 분리되는지 확인
+- Outlier 샘플 식별
+
+---
+
+## Troubleshooting
+
+### 문제: 샘플명에서 조건 추출 실패
+**해결:**
+```r
+# extract_condition 함수 수정
+extract_condition <- function(sample_name) {
+  # 본인의 샘플명 패턴에 맞게 수정
+  condition <- gsub("_rep[0-9]+$", "", sample_name)  # 예시
+  return(condition)
+}
+```
+
+### 문제: 특정 비교 조합에서 에러 발생
+**원인:** 해당 조건이 resultsNames에 없음
+**해결:**
+```r
+# DESeq2 결과 확인
+resultsNames(dds)
+
+# Contrast 직접 지정
+res <- results(dds, contrast=c("Condition", "Treatment", "Control"))
+```
+
+### 문제: 메모리 부족
+**해결:**
+- 샘플 수가 많은 경우 파라미터 조합 축소
+- 또는 비교 조합별로 개별 실행
+
+---
+
+## Citation
+
+이 파이프라인을 사용한 경우 다음을 인용하세요:
+
+```
+Love, M.I., Huber, W., Anders, S. (2014) 
+Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2. 
+Genome Biology, 15:550.
+```
+
+---
+
+## Required R Packages
+
+```r
+# Installation
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install(c("DESeq2", "EnhancedVolcano"))
+install.packages(c("dplyr", "ggplot2", "pheatmap", "ggrepel"))
+```
+
+---
+
+## Changelog
+
+### Version 1.0
+- Initial release
+- Grid search across 12 parameter combinations
+- Comprehensive visualization suite
+- Automatic metadata extraction
+
+---
+
